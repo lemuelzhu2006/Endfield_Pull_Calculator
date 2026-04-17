@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="明日方舟：终末地 限定角色池抽卡计算器 - 精确 DP 概率与期望计算" />
+    <title>明日方舟：终末地 限定角色池抽卡计算器</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="app">
+        <header class="hero">
+            <div class="hero-badge">ENDFIELD · 限定池工具</div>
+            <h1 class="hero-title">
+                <span class="hero-line1">明日方舟：终末地</span>
+                <span class="hero-line2">限定角色池抽卡计算器</span>
+            </h1>
+            <p class="hero-sub">
+                当前示例限定 up：<strong id="heroCharName">庄方宜</strong>
+                &nbsp;·&nbsp;精确 DP，非 Monte Carlo
+            </p>
+        </header>
+
+        <section class="card rules-card">
+            <h2 class="card-title">规则摘要</h2>
+            <ul class="rules-list">
+                <li><span class="rule-key">1 限定抽</span> = 500 嵌晶玉（不足 500 的余玉不折算）</li>
+                <li>当前池<strong>前 120 次主抽内</strong>必得 1 次限定 up（每池仅触发一次）</li>
+                <li>当前池第 30 次主抽时额外赠送 <strong>1 次免费十连</strong>（每池仅一次）</li>
+                <li>当前池每 240 次主抽赠送 <strong>1 个限定信物</strong>（视为 1 个限定 up）</li>
+                <li>免费十连不计入主抽 pity / 240 累计 / 120 主抽计数，但其中若出限定 up 会<strong>消耗 120 保底资格</strong></li>
+                <li>6★ 基础概率 0.8%，第 66 抽起每抽 +5pp，第 80 抽必出 6★；任意 6★ 后 pity 清零</li>
+                <li>6★ 中限定 up 概率 50%</li>
+            </ul>
+            <p class="rules-note">
+                本工具默认当前池为<strong>全新状态</strong>（累计 0 抽、120 保底未触发、免费十连未领、240 奖励累计 0）。
+                "已垫抽数"只用于普通主抽的 6★ pity，不代表当前池已抽过。
+            </p>
+        </section>
+
+        <nav class="tabs" role="tablist">
+            <button class="tab-btn active" role="tab" data-tab="prob" aria-selected="true">概率计算</button>
+            <button class="tab-btn" role="tab" data-tab="exp" aria-selected="false">期望计算</button>
+        </nav>
+
+        <!-- ========== 概率计算 ========== -->
+        <section class="card tab-panel active" id="panel-prob" role="tabpanel">
+            <h2 class="card-title">概率计算</h2>
+            <p class="card-desc">
+                输入资源与目标，计算<strong>把全部可用主抽花完</strong>后，获得至少目标数量限定 up 的成功率与完整分布。
+            </p>
+
+            <form class="form-grid" id="probForm" novalidate>
+                <label class="field">
+                    <span class="field-label">嵌晶玉数量</span>
+                    <input type="number" inputmode="numeric" min="0" step="1" id="probGems" value="0" />
+                    <span class="field-hint">每 500 嵌晶玉 = 1 限定抽</span>
+                </label>
+
+                <label class="field">
+                    <span class="field-label">限定抽数量</span>
+                    <input type="number" inputmode="numeric" min="0" step="1" id="probQuota" value="0" />
+                    <span class="field-hint">已持有的限定抽</span>
+                </label>
+
+                <label class="field">
+                    <span class="field-label">已垫抽数（0 ~ 79）</span>
+                    <input type="number" inputmode="numeric" min="0" max="79" step="1" id="probPity" value="0" />
+                    <span class="field-hint">仅影响 6★ pity，不代表当前池已抽过</span>
+                </label>
+
+                <label class="field">
+                    <span class="field-label">目标限定 up 数量</span>
+                    <input type="number" inputmode="numeric" min="1" step="1" id="probTarget" value="1" />
+                    <span class="field-hint">本体或信物都计 1 个</span>
+                </label>
+            </form>
+
+            <div class="preview" id="probPreview">
+                <div class="preview-item">
+                    <span class="preview-key">可用主抽数</span>
+                    <span class="preview-val" id="probMainDraws">0</span>
+                </div>
+                <div class="preview-item">
+                    <span class="preview-key">免费十连</span>
+                    <span class="preview-val" id="probFreeTen">否</span>
+                </div>
+                <div class="preview-item">
+                    <span class="preview-key">240 抽信物</span>
+                    <span class="preview-val" id="probTokens">0</span>
+                </div>
+            </div>
+
+            <div class="form-error" id="probError" hidden></div>
+            <button type="button" class="primary-btn" id="probCalcBtn">计算概率</button>
+
+            <div class="result" id="probResult" hidden>
+                <div class="big-stat">
+                    <div class="big-stat-label" id="probSuccessLabel">至少 1 个限定 up 的概率</div>
+                    <div class="big-stat-value" id="probSuccessValue">—</div>
+                </div>
+
+                <div class="info-bar">
+                    <div class="info-item"><span>目标</span><strong id="probInfoTarget">—</strong></div>
+                    <div class="info-item"><span>可用主抽</span><strong id="probInfoDraws">—</strong></div>
+                    <div class="info-item"><span>期望获得</span><strong id="probInfoMean">—</strong></div>
+                    <div class="info-item"><span>至少 1 个</span><strong id="probInfoAtLeast1">—</strong></div>
+                </div>
+
+                <h3 class="subtitle">完整概率分布</h3>
+                <div class="table-wrap">
+                    <table class="result-table" id="probTable">
+                        <thead>
+                            <tr>
+                                <th>限定 up 数量</th>
+                                <th>本档概率</th>
+                                <th>累计 ≥ 概率</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <p class="footer-note">
+                    结果已纳入 <strong>30 抽赠送免费十连</strong>、<strong>120 主抽限定保底</strong>、
+                    <strong>240 抽送信物</strong>三项规则。分布长度严格等于理论可达最大值
+                    <code>N + (N≥30?10:0) + ⌊N/240⌋</code>，未合并尾桶。
+                </p>
+            </div>
+        </section>
+
+        <!-- ========== 期望计算 ========== -->
+        <section class="card tab-panel" id="panel-exp" role="tabpanel">
+            <h2 class="card-title">期望计算</h2>
+            <p class="card-desc">
+                从<strong>全新当前限定池</strong>开始，计算获得指定数量限定 up 所需的<strong>期望主抽数</strong>（不含免费十连出手次数）。
+            </p>
+
+            <form class="form-grid" id="expForm" novalidate>
+                <label class="field">
+                    <span class="field-label">目标限定 up 数量</span>
+                    <input type="number" inputmode="numeric" min="1" step="1" id="expTarget" value="1" />
+                    <span class="field-hint">本体或信物都计 1 个</span>
+                </label>
+            </form>
+
+            <div class="form-error" id="expError" hidden></div>
+            <button type="button" class="primary-btn" id="expCalcBtn">计算期望</button>
+
+            <div class="result" id="expResult" hidden>
+                <div class="big-stat">
+                    <div class="big-stat-label" id="expLabel">期望主抽数</div>
+                    <div class="big-stat-value" id="expValue">—</div>
+                </div>
+
+                <div class="info-bar">
+                    <div class="info-item"><span>目标</span><strong id="expInfoTarget">—</strong></div>
+                    <div class="info-item"><span>严格上界</span><strong id="expInfoBound">—</strong></div>
+                    <div class="info-item"><span>所需嵌晶玉</span><strong id="expInfoGems">—</strong></div>
+                </div>
+
+                <p class="footer-note">
+                    期望主抽数仅计算<strong>普通主抽</strong>消耗，不含免费十连内部的 10 次出手。
+                    计算已纳入 <strong>30 抽免费十连</strong>、<strong>120 主抽限定保底</strong>、
+                    <strong>240 抽送信物</strong>的影响。
+                </p>
+            </div>
+        </section>
+
+        <footer class="site-footer">
+            <p>
+                本计算器结果由精确动态规划（DP）计算，非 Monte Carlo 模拟。
+                源码开源，可部署到 GitHub Pages。
+            </p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
